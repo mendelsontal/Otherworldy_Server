@@ -1,7 +1,5 @@
-# overrides for dev
+# server/config/development.py
+from .base import *
 
-from .base import BaseConfig
-
-class DevelopmentConfig(BaseConfig):
-    ENV = "development"
-    DEBUG = True
+DEBUG = True
+ENV = "development"

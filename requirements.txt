@@ -1,1 +1,3 @@
 # dependencies (e.g., SQLAlchemy, psycopg2, bcrypt)
+SQLAlchemy
+passlib[bcrypt]

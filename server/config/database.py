@@ -1,8 +1,7 @@
-# DB configs
-
+# server/config/database.py
 import os
-from . import settings
+from .base import DB_URI
 
-# Default DB (override via environment variable)
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{settings.BASE_DIR}/game.db")
+# Default DB URL (can override via environment)
+DATABASE_URL = os.getenv("DATABASE_URL", DB_URI)
 POOL_SIZE = int(os.getenv("DB_POOL_SIZE", 5))

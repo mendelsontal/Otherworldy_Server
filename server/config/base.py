@@ -1,17 +1,20 @@
-# shared defaults
-
+# server/config/base.py
 import os
+from pathlib import Path
 
-# Default (shared) settings
-class BaseConfig:
-    ENV = "base"
-    DEBUG = False
+# Paths
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-    # Server
-    HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-    PORT = int(os.getenv("SERVER_PORT", 5000))
+# Server Settings
+HOST = os.getenv("GAME_SERVER_HOST", "127.0.0.1")
+PORT = int(os.getenv("GAME_SERVER_PORT", 5000))
 
-    # Paths
-    BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-    DATA_DIR = os.path.join(BASE_DIR, "data")
-    LOGS_DIR = os.path.join(BASE_DIR, "logs")
+# Database
+DB_URI = os.getenv("GAME_DB_URI", f"sqlite:///{BASE_DIR / 'db' / 'game.db'}")
+
+# Logging
+LOG_LEVEL = os.getenv("GAME_LOG_LEVEL", "INFO")
+
+# Gameplay Defaults
+TICK_RATE = 30
+MAX_PLAYERS = 100
