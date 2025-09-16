@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 from server.network.protocol import Protocol, ProtocolError
 from server.db.database import Database, SessionLocal, pwd_context
 from server.db.models import User
+from server.db.characters import create_character
 import json
 
 class ClientHandler(threading.Thread):
@@ -58,8 +59,54 @@ class ClientHandler(threading.Thread):
 
         if action == "login":
             self.handle_login(data)
+        elif action == "create_character":
+            self.handle_create_character(data)
         else:
             self.send_error(f"Unknown action: {action}")
+
+    def handle_create_character(self, data):
+        if not hasattr(self, "user_id"):
+            self.send_error("Not logged in")
+            return
+
+        name = data.get("name")
+        if not name:
+            self.send_error("Character name missing")
+            return
+
+        try:
+            char = create_character(self.user_id, name)
+        except ValueError as e:
+            self.send_error(str(e))
+            return
+
+        self.send_json({
+            "action": "character_created",
+            "character": {
+                "id": char.id,
+                "name": char.name,
+                "x": char.x,
+                "y": char.y,
+                "stats": {
+                    "Level": char.level,
+                    "Exp": char.exp,
+                    "HP": char.hp,
+                    "MP": char.mp,
+                    "STR": char.str,
+                    "DEX": char.dex,
+                    "AGI": char.agi,
+                    "VIT": char.vit,
+                    "INT": char.int
+                }
+            }
+        })
+
+        name = data.get("name")
+        if not name:
+            self.send_error("Character name missing")
+            return
+
+        char = create_character(self.user_id, name)
 
     def handle_login(self, data):
         username = data.get("username")
@@ -79,8 +126,9 @@ class ClientHandler(threading.Thread):
                 self.send_json({"action": "login_failed", "reason": "Invalid password"})
                 return
 
-            # Save username
+            # Save username and user_id AFTER user is verified
             self.username = user.username
+            self.user_id = user.id
 
             # Prepare characters for client
             characters = []
@@ -92,6 +140,7 @@ class ClientHandler(threading.Thread):
                     "y": char.y,
                     "stats": {
                         "Level": char.level,
+                        "Exp": char.exp,
                         "HP": char.hp,
                         "MP": char.mp,
                         "STR": char.str,

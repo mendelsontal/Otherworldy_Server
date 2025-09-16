@@ -16,5 +16,15 @@ class Character(Base):
     name = Column(String)
     x = Column(Integer, default=100)
     y = Column(Integer, default=100)
-    level = Column(Integer, default=1)
+    level = Column(Integer, default=0)
+    exp = Column(Integer, default=0)
+
+    # Stats
+    hp = Column(Integer, default=50)
+    mp = Column(Integer, default=0)
+    str = Column(Integer, default=0)
+    int = Column(Integer, default=0)
+    dex = Column(Integer, default=0)
+    vit = Column(Integer, default=0)
+    agi = Column(Integer, default=0)
     user = relationship("User", back_populates="characters")
