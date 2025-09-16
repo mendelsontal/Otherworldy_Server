@@ -30,6 +30,7 @@ def create_character(user_id: int, name: str):
             name=name,
             x=100,
             y=100,
+            map_id=100001,
             level=0,
             exp=0,
             hp=50,

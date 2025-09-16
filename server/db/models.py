@@ -16,6 +16,7 @@ class Character(Base):
     name = Column(String)
     x = Column(Integer, default=100)
     y = Column(Integer, default=100)
+    map_id = Column(Integer, default=100001)
     level = Column(Integer, default=0)
     exp = Column(Integer, default=0)
 

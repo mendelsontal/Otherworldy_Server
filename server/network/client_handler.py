@@ -87,6 +87,7 @@ class ClientHandler(threading.Thread):
                 "name": char.name,
                 "x": char.x,
                 "y": char.y,
+                "map_id": char.map_id,
                 "stats": {
                     "Level": char.level,
                     "Exp": char.exp,
@@ -138,6 +139,7 @@ class ClientHandler(threading.Thread):
                     "name": char.name,
                     "x": char.x,
                     "y": char.y,
+                    "map_id": char.map_id,
                     "stats": {
                         "Level": char.level,
                         "Exp": char.exp,
