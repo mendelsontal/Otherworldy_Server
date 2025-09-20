@@ -20,9 +20,9 @@ def create_character(user_id: int, name: str):
         # Check global uniqueness
         existing = session.execute(
             select(Character).where(Character.name == name)
-        ).scalar_one_or_none()
+        ).one_or_none()
 
-        if existing:
+        if existing is not None:
             raise ValueError("Character name already exists")
 
         char = Character(
@@ -45,5 +45,22 @@ def create_character(user_id: int, name: str):
         session.commit()
         session.refresh(char)
         return char
+    finally:
+        session.close()
+
+def delete_character(user_id: int, char_id: int) -> bool:
+    """Delete a character only if it belongs to the given user."""
+    session = SessionLocal()
+    try:
+        char = session.execute(
+            select(Character).where(Character.id == char_id, Character.user_id == user_id)
+        ).scalar_one_or_none()
+
+        if not char:
+            return False  # Not found or doesn’t belong to this user
+
+        session.delete(char)
+        session.commit()
+        return True
     finally:
         session.close()

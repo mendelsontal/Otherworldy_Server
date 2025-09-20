@@ -179,3 +179,17 @@ class ClientHandler(threading.Thread):
             print(f"[-] Client {self.address} disconnected")
         self.client_socket.close()
         self.server.remove_client(self)
+    
+    def handle_delete_character(self, data):
+        char_id = data.get("char_id")
+        if not char_id:
+            self.send_error("Missing character ID")
+            return
+
+        from server.db.characters import delete_character
+        success = delete_character(self.user_id, char_id)
+
+        if success:
+            self.send({"action": "delete_character_ok", "char_id": char_id})
+        else:
+            self.send_error("Character not found or not owned by user")

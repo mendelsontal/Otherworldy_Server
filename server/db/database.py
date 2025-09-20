@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 
 # Engine and session
 engine = create_engine(DATABASE_URL, echo=True, future=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, expire_on_commit=False, bind=engine)
 
 # Base class
 Base = declarative_base()
@@ -21,6 +21,21 @@ def init_db():
 
 class Database:
     @staticmethod
+
+    def delete_user(username: str) -> bool:
+        from .models import User
+        session = SessionLocal()
+        try:
+            stmt = select(User).where(User.username == username)
+            user = session.execute(stmt).scalar_one_or_none()
+            if not user:
+                return False
+            session.delete(user)
+            session.commit()
+            return True
+        finally:
+            session.close()
+            
     def create_user(username: str, password: str):
         from .models import User
         session = SessionLocal()
