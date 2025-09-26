@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy import Column, Integer, String, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -19,6 +19,9 @@ class Character(Base):
     map_id = Column(Integer, default=100001)
     level = Column(Integer, default=0)
     exp = Column(Integer, default=0)
+    appearance = Column(JSON, default=lambda: {})
+    gear = Column(JSON, default=lambda: {})
+
 
     # Stats
     hp = Column(Integer, default=50)

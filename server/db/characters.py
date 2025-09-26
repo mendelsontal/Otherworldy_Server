@@ -8,23 +8,36 @@ from .models import Character
 # Only allow letters, numbers, underscores; max 12 characters
 NAME_REGEX = re.compile(r"^[A-Za-z0-9_]{1,12}$")
 
-def create_character(user_id: int, name: str):
-    # Validate name
+def check_name(name: str) -> tuple[bool, str | None]:
+    """
+    Validate a character name.
+    Returns (ok, reason) where:
+      - ok = True if valid and available
+      - ok = False with reason string otherwise
+    """
     if not NAME_REGEX.match(name):
-        raise ValueError(
-            "Invalid name: only letters, numbers, underscores, 1-12 characters allowed"
-        )
+        return False, "Invalid name: only letters, numbers, underscores, 1-12 characters allowed"
 
     session = SessionLocal()
     try:
-        # Check global uniqueness
         existing = session.execute(
             select(Character).where(Character.name == name)
         ).one_or_none()
 
         if existing is not None:
-            raise ValueError("Character name already exists")
+            return False, "Character name already exists"
 
+        return True, None
+    finally:
+        session.close()
+
+def create_character(user_id: int, name: str, gender: str = "Male", hair: str | None = None):
+    ok, reason = check_name(name)
+    if not ok:
+        raise ValueError(reason)
+
+    session = SessionLocal()
+    try:
         char = Character(
             user_id=user_id,
             name=name,
@@ -39,14 +52,27 @@ def create_character(user_id: int, name: str):
             dex=0,
             agi=0,
             vit=0,
-            int=0
-        )
+            int=0,
+            appearance={
+                "gender": gender,
+                "hair": hair,
+            },          
+            gear={
+                "helm": None,
+                "armor": None,
+                "pants": None,
+                "accessory": None,
+                "weapon": None
+            }
+                )
+        
         session.add(char)
         session.commit()
         session.refresh(char)
         return char
     finally:
         session.close()
+
 
 def delete_character(user_id: int, char_id: int) -> bool:
     """Delete a character only if it belongs to the given user."""

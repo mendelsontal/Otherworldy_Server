@@ -6,7 +6,7 @@ from sqlalchemy.orm import selectinload
 from server.network.protocol import Protocol, ProtocolError
 from server.db.database import SessionLocal, pwd_context
 from server.db.models import User
-from server.db.characters import create_character, delete_character
+from server.db.characters import create_character, delete_character, check_name
 import json
 
 
@@ -20,6 +20,23 @@ class ClientHandler(threading.Thread):
         self.username = None
         self.user_id = None
         self.recv_buffer = ""
+
+    def handle_check_name(self, data):
+        name = data.get("name")
+        if not name:
+            self.send_json({
+                "action": "name_valid",
+                "ok": False,
+                "reason": "No name provided"
+            })
+            return
+
+        ok, reason = check_name(name)
+        self.send_json({
+            "action": "name_valid",
+            "ok": ok,
+            "reason": reason
+    })
 
     def run(self):
         print(f"[+] Client connected: {self.address}")
@@ -65,6 +82,8 @@ class ClientHandler(threading.Thread):
             self.handle_create_character(data)
         elif action == "delete_character":
             self.handle_delete_character(data)
+        elif action == "check_name":
+            self.handle_check_name(data)
         else:
             self.send_error(f"Unknown action: {action}")
 
@@ -90,6 +109,7 @@ class ClientHandler(threading.Thread):
                     "x": char.x,
                     "y": char.y,
                     "map_id": char.map_id,
+                    "appearance": char.appearance,
                     "stats": {
                         "Level": char.level,
                         "Exp": char.exp,
@@ -145,9 +165,11 @@ class ClientHandler(threading.Thread):
         if not name:
             self.send_error("Character name missing")
             return
+        gender = data.get("gender", "Male")
+        hair = data.get("hair")
 
         try:
-            char = create_character(self.user_id, name)
+            char = create_character(self.user_id, name, gender, hair)
         except ValueError as e:
             self.send_error(str(e))
             return
@@ -161,6 +183,7 @@ class ClientHandler(threading.Thread):
                 "x": char.x,
                 "y": char.y,
                 "map_id": char.map_id,
+                "appearance": char.appearance,
                 "stats": {
                     "Level": char.level,
                     "Exp": char.exp,
