@@ -4,10 +4,11 @@ import socket
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from server.network.protocol import Protocol, ProtocolError
-from server.db.database import Database, SessionLocal, pwd_context
+from server.db.database import SessionLocal, pwd_context
 from server.db.models import User
-from server.db.characters import create_character
+from server.db.characters import create_character, delete_character
 import json
+
 
 class ClientHandler(threading.Thread):
     def __init__(self, client_socket: socket.socket, address, server):
@@ -17,6 +18,7 @@ class ClientHandler(threading.Thread):
         self.server = server
         self.running = True
         self.username = None
+        self.user_id = None
         self.recv_buffer = ""
 
     def run(self):
@@ -61,79 +63,27 @@ class ClientHandler(threading.Thread):
             self.handle_login(data)
         elif action == "create_character":
             self.handle_create_character(data)
+        elif action == "delete_character":
+            self.handle_delete_character(data)
         else:
             self.send_error(f"Unknown action: {action}")
 
-    def handle_create_character(self, data):
-        if not hasattr(self, "user_id"):
+    def send_character_list(self):
+        """Send the full character list for the logged-in user."""
+        if not self.user_id:
             self.send_error("Not logged in")
             return
 
-        name = data.get("name")
-        if not name:
-            self.send_error("Character name missing")
-            return
-
-        try:
-            char = create_character(self.user_id, name)
-        except ValueError as e:
-            self.send_error(str(e))
-            return
-
-        self.send_json({
-            "action": "character_created",
-            "character": {
-                "id": char.id,
-                "name": char.name,
-                "x": char.x,
-                "y": char.y,
-                "map_id": char.map_id,
-                "stats": {
-                    "Level": char.level,
-                    "Exp": char.exp,
-                    "HP": char.hp,
-                    "MP": char.mp,
-                    "STR": char.str,
-                    "DEX": char.dex,
-                    "AGI": char.agi,
-                    "VIT": char.vit,
-                    "INT": char.int
-                }
-            }
-        })
-
-        name = data.get("name")
-        if not name:
-            self.send_error("Character name missing")
-            return
-
-        char = create_character(self.user_id, name)
-
-    def handle_login(self, data):
-        username = data.get("username")
-        password = data.get("password")
-
-        # Use a session to fetch user with eager-loaded characters
         session = SessionLocal()
         try:
-            stmt = select(User).options(selectinload(User.characters)).where(User.username == username)
+            stmt = select(User).options(selectinload(User.characters)).where(User.id == self.user_id)
             user = session.execute(stmt).scalar_one_or_none()
-
             if not user:
-                self.send_json({"action": "login_failed", "reason": "User not found"})
+                self.send_error("User not found")
                 return
 
-            if not pwd_context.verify(password, user.password_hash):
-                self.send_json({"action": "login_failed", "reason": "Invalid password"})
-                return
-
-            # Save username and user_id AFTER user is verified
-            self.username = user.username
-            self.user_id = user.id
-
-            # Prepare characters for client
             characters = []
-            for char in user.characters:  # safe, eager-loaded
+            for char in user.characters:
                 characters.append({
                     "id": char.id,
                     "name": char.name,
@@ -155,12 +105,101 @@ class ClientHandler(threading.Thread):
 
             self.send_json({
                 "action": "character_list",
-                "user": {"username": user.username},
+                "user": {"id": user.id, "username": user.username},
                 "characters": characters
             })
-
         finally:
             session.close()
+
+    def handle_login(self, data):
+        username = data.get("username")
+        password = data.get("password")
+
+        session = SessionLocal()
+        try:
+            stmt = select(User).options(selectinload(User.characters)).where(User.username == username)
+            user = session.execute(stmt).scalar_one_or_none()
+
+            if not user:
+                self.send_json({"action": "login_failed", "reason": "User not found"})
+                return
+
+            if not pwd_context.verify(password, user.password_hash):
+                self.send_json({"action": "login_failed", "reason": "Invalid password"})
+                return
+
+            self.username = user.username
+            self.user_id = user.id
+
+            # Send full character list
+            self.send_character_list()
+        finally:
+            session.close()
+
+    def handle_create_character(self, data):
+        if not self.user_id:
+            self.send_error("Not logged in")
+            return
+
+        name = data.get("name")
+        if not name:
+            self.send_error("Character name missing")
+            return
+
+        try:
+            char = create_character(self.user_id, name)
+        except ValueError as e:
+            self.send_error(str(e))
+            return
+
+        self.send_json({
+            "action": "character_created",
+            "user_id": self.user_id,
+            "character": {
+                "id": char.id,
+                "name": char.name,
+                "x": char.x,
+                "y": char.y,
+                "map_id": char.map_id,
+                "stats": {
+                    "Level": char.level,
+                    "Exp": char.exp,
+                    "HP": char.hp,
+                    "MP": char.mp,
+                    "STR": char.str,
+                    "DEX": char.dex,
+                    "AGI": char.agi,
+                    "VIT": char.vit,
+                    "INT": char.int
+                }
+            }
+        })
+
+        # Send updated character list
+        self.send_character_list()
+
+    def handle_delete_character(self, data):
+        if not hasattr(self, "user_id"):
+            self.send_error("Not logged in")
+            return
+
+        char_id = data.get("char_id")
+        if not char_id:
+            self.send_error("Missing character ID")
+            return
+
+        success = delete_character(self.user_id, char_id)
+
+        if success:
+            self.send_json({
+                "action": "delete_character_ok",
+                "char_id": char_id,
+                "user_id": self.user_id
+            })
+            # Send updated character list
+            self.send_character_list()
+        else:
+            self.send_error("Character not found or not owned by user")
 
     def send_json(self, message: dict):
         try:
@@ -179,17 +218,3 @@ class ClientHandler(threading.Thread):
             print(f"[-] Client {self.address} disconnected")
         self.client_socket.close()
         self.server.remove_client(self)
-    
-    def handle_delete_character(self, data):
-        char_id = data.get("char_id")
-        if not char_id:
-            self.send_error("Missing character ID")
-            return
-
-        from server.db.characters import delete_character
-        success = delete_character(self.user_id, char_id)
-
-        if success:
-            self.send({"action": "delete_character_ok", "char_id": char_id})
-        else:
-            self.send_error("Character not found or not owned by user")
