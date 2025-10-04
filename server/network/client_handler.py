@@ -7,8 +7,8 @@ from server.network.protocol import Protocol, ProtocolError
 from server.db.database import SessionLocal, pwd_context
 from server.db.models import User
 from server.db.characters import create_character, delete_character, check_name
+import re
 import json
-
 
 class ClientHandler(threading.Thread):
     def __init__(self, client_socket: socket.socket, address, server):
@@ -20,23 +20,6 @@ class ClientHandler(threading.Thread):
         self.username = None
         self.user_id = None
         self.recv_buffer = ""
-
-    def handle_check_name(self, data):
-        name = data.get("name")
-        if not name:
-            self.send_json({
-                "action": "name_valid",
-                "ok": False,
-                "reason": "No name provided"
-            })
-            return
-
-        ok, reason = check_name(name)
-        self.send_json({
-            "action": "name_valid",
-            "ok": ok,
-            "reason": reason
-    })
 
     def run(self):
         print(f"[+] Client connected: {self.address}")
@@ -56,13 +39,9 @@ class ClientHandler(threading.Thread):
             self.disconnect()
 
     def handle_message(self, message_str: str):
-        message = None
         try:
             message = Protocol.decode(message_str.encode("utf-8"))
         except ProtocolError:
-            pass
-
-        if message is None:
             try:
                 message = json.loads(message_str)
             except json.JSONDecodeError:
@@ -76,7 +55,9 @@ class ClientHandler(threading.Thread):
         action = message.get("action")
         data = message.get("data", {})
 
-        if action == "login":
+        if action == "signup":
+            self.handle_signup(data)
+        elif action == "login":
             self.handle_login(data)
         elif action == "create_character":
             self.handle_create_character(data)
@@ -86,48 +67,58 @@ class ClientHandler(threading.Thread):
             self.handle_check_name(data)
         else:
             self.send_error(f"Unknown action: {action}")
+    
+    def handle_signup(self, data):
+        """Handle new user registration."""
+        first_name = data.get("first_name", "").strip()
+        last_name = data.get("last_name", "").strip()
+        username = data.get("username", "").strip()
+        email = data.get("email", "").strip()
+        password = data.get("password", "").strip()
+        confirm_password = data.get("confirm_password", "").strip()
 
-    def send_character_list(self):
-        """Send the full character list for the logged-in user."""
-        if not self.user_id:
-            self.send_error("Not logged in")
+        username = username.lower()
+        email = email.lower()
+
+        # Basic validation
+        if not all([first_name, last_name, username, email, password, confirm_password]):
+            self.send_json({"action": "signup_failed", "reason": "All fields are required"})
+            return
+        if password != confirm_password:
+            self.send_json({"action": "signup_failed", "reason": "Passwords do not match"})
+            return
+        if len(username) < 6 or len(password) < 6:
+            self.send_json({"action": "signup_failed", "reason": "Username and password must be at least 6 characters"})
+            return
+        if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+            self.send_json({"action": "signup_failed", "reason": "Invalid email"})
             return
 
         session = SessionLocal()
         try:
-            stmt = select(User).options(selectinload(User.characters)).where(User.id == self.user_id)
-            user = session.execute(stmt).scalar_one_or_none()
-            if not user:
-                self.send_error("User not found")
+            # Check for existing username or email
+            existing = session.query(User).filter((User.username == username) | (User.email == email)).first()
+            if existing:
+                self.send_json({"action": "signup_failed", "reason": "Username or email already exists"})
                 return
 
-            characters = []
-            for char in user.characters:
-                characters.append({
-                    "id": char.id,
-                    "name": char.name,
-                    "x": char.x,
-                    "y": char.y,
-                    "map_id": char.map_id,
-                    "appearance": char.appearance,
-                    "stats": {
-                        "Level": char.level,
-                        "Exp": char.exp,
-                        "HP": char.hp,
-                        "MP": char.mp,
-                        "STR": char.str,
-                        "DEX": char.dex,
-                        "AGI": char.agi,
-                        "VIT": char.vit,
-                        "INT": char.int
-                    }
-                })
+            # Create user
+            hashed_pw = pwd_context.hash(password)
+            user = User(
+                first_name=first_name,
+                last_name=last_name,
+                username=username,
+                email=email,
+                password_hash=hashed_pw
+            )
+            session.add(user)
+            session.commit()
 
-            self.send_json({
-                "action": "character_list",
-                "user": {"id": user.id, "username": user.username},
-                "characters": characters
-            })
+            self.send_json({"action": "signup_ok", "user_id": user.id, "username": user.username})
+            print(f"[+] New user registered: {username}")
+        except Exception as e:
+            session.rollback()
+            self.send_json({"action": "signup_failed", "reason": str(e)})
         finally:
             session.close()
 
@@ -150,8 +141,6 @@ class ClientHandler(threading.Thread):
 
             self.username = user.username
             self.user_id = user.id
-
-            # Send full character list
             self.send_character_list()
         finally:
             session.close()
@@ -177,32 +166,12 @@ class ClientHandler(threading.Thread):
         self.send_json({
             "action": "character_created",
             "user_id": self.user_id,
-            "character": {
-                "id": char.id,
-                "name": char.name,
-                "x": char.x,
-                "y": char.y,
-                "map_id": char.map_id,
-                "appearance": char.appearance,
-                "stats": {
-                    "Level": char.level,
-                    "Exp": char.exp,
-                    "HP": char.hp,
-                    "MP": char.mp,
-                    "STR": char.str,
-                    "DEX": char.dex,
-                    "AGI": char.agi,
-                    "VIT": char.vit,
-                    "INT": char.int
-                }
-            }
+            "character": char.as_dict()
         })
-
-        # Send updated character list
         self.send_character_list()
 
     def handle_delete_character(self, data):
-        if not hasattr(self, "user_id"):
+        if not self.user_id:
             self.send_error("Not logged in")
             return
 
@@ -212,17 +181,45 @@ class ClientHandler(threading.Thread):
             return
 
         success = delete_character(self.user_id, char_id)
-
         if success:
             self.send_json({
                 "action": "delete_character_ok",
                 "char_id": char_id,
                 "user_id": self.user_id
             })
-            # Send updated character list
             self.send_character_list()
         else:
             self.send_error("Character not found or not owned by user")
+
+    def handle_check_name(self, data):
+        name = data.get("name")
+        if not name:
+            self.send_json({"action": "name_valid", "ok": False, "reason": "No name provided"})
+            return
+
+        ok, reason = check_name(name)
+        self.send_json({"action": "name_valid", "ok": ok, "reason": reason})
+
+    def send_character_list(self):
+        if not self.user_id:
+            self.send_error("Not logged in")
+            return
+
+        session = SessionLocal()
+        try:
+            stmt = select(User).options(selectinload(User.characters)).where(User.id == self.user_id)
+            user = session.execute(stmt).scalar_one_or_none()
+            if not user:
+                self.send_error("User not found")
+                return
+
+            self.send_json({
+                "action": "character_list",
+                "user": {"id": user.id, "username": user.username},
+                "characters": [char.as_dict() for char in user.characters]
+            })
+        finally:
+            session.close()
 
     def send_json(self, message: dict):
         try:
